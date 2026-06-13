@@ -88,7 +88,7 @@ later:      What say the senators of the seal of the seat...
 ```
 
 We do this part in **[MLX](https://github.com/ml-explore/mlx)**, Apple's tool for
-using the Mac's graphics chip — it's fast and the code stays simple.
+using the Mac's graphics chip — it's fast and the code stays simple. I personally have been fascinated by MLX since it came out. This was a really sinple use case for it.
 → [`train/train.py`](train/train.py)
 
 ### 4. Shrinking it to fit
