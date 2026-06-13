@@ -68,7 +68,10 @@ void loop() {
   for (;;) {                                   // read one line from serial
     while (!Serial.available()) { }
     char c = Serial.read();
-    if (c == '\r' || c == '\n') break;
+    if (c == '\r' || c == '\n') {              // end of line
+      if (n == 0) continue;                    // ignore blank lines / stray CR+LF
+      break;
+    }
     if (c == 8 || c == 127) {                  // backspace
       if (n > 0) { n--; Serial.print("\b \b"); }
       continue;
