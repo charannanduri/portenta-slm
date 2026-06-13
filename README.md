@@ -1,7 +1,7 @@
 # portenta-slm
 
 **I trained a Small Language Model to write like Shakespeare, then got it running on a little
-chip you can hold in your hand — and you can chat with it over a USB cable.**
+chip you can hold in your hand — and you can chat with it over USB serial.**
 
 I wanted to see what a small microcontroller could do while also learning how Language models actually train, and infer on text.
 This is a really simple way to learn what models are actually doign under the hood. 
