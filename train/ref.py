@@ -1,6 +1,7 @@
 """
-Reference forward pass in NumPy, reading the SAME c_inference/model.bin the
-C program reads. This is the gold standard: the C output must match this.
+A second copy of the model, written in plain NumPy, that reads the exact same
+model.bin file. We use it as the "answer key": whatever numbers this prints,
+the C code has to print the same. If they match, the C is correct.
 
 Run:  .venv/bin/python train/ref.py "First Citizen:"
 """
@@ -12,22 +13,22 @@ import numpy as np
 f = open("c_inference/model.bin", "rb")
 magic, version, vocab, block, n_embd, n_head, n_layer = struct.unpack("<7i", f.read(28))
 chars = f.read(vocab).decode("latin1")
-f.read((-f.tell()) % 4)                       # skip alignment padding
+f.read((-f.tell()) % 4)                       # skip the few padding bytes
 C, H, hs = n_embd, 4 * n_embd, n_embd // n_head
 
 
-def rf(n):
+def rf(n):                                    # read n decimal numbers
     return np.frombuffer(f.read(4 * n), dtype="<f4").astype(np.float32).copy()
 
 
-def ri(n):
+def ri(n):                                    # read n single-byte numbers
     return np.frombuffer(f.read(n), dtype=np.int8).astype(np.float32).copy()
 
 
-def qmat(rows, cols):
+def qmat(rows, cols):                         # read a shrunk grid and un-shrink it
     q = ri(rows * cols).reshape(rows, cols)
     s = rf(rows)
-    return q * s[:, None]                       # dequantized (rows, cols)
+    return q * s[:, None]
 
 
 token_emb = rf(vocab * C).reshape(vocab, C)
@@ -46,37 +47,37 @@ ln_f_w, ln_f_b = rf(C), rf(C)
 lm, lm_b = qmat(vocab, C), rf(vocab)
 
 
-def lin(x, W, b=None):
+def lin(x, W, b=None):                        # a weight grid: inputs * weights + bias
     y = x @ W.T
     return y + b if b is not None else y
 
 
-def ln(x, w, b):
+def ln(x, w, b):                              # layernorm: tidy the numbers
     m = x.mean(-1, keepdims=True)
     v = ((x - m) ** 2).mean(-1, keepdims=True)
     return (x - m) / np.sqrt(v + 1e-5) * w + b
 
 
-def forward(ids):
+def forward(ids):                             # run the whole model once
     T = len(ids)
-    x = token_emb[ids] + pos_emb[:T]            # (T, C)
+    x = token_emb[ids] + pos_emb[:T]            # what each letter is + where it sits
     for d in layers:
         xn = ln(x, d["ln1_w"], d["ln1_b"])
         q, k, v = lin(xn, d["wq"]), lin(xn, d["wk"]), lin(xn, d["wv"])
         att = np.zeros_like(x)
-        for h in range(n_head):
+        for h in range(n_head):                # the attention, one head at a time
             sl = slice(h * hs, (h + 1) * hs)
             sc = q[:, sl] @ k[:, sl].T / np.sqrt(hs)
-            sc = np.where(np.tril(np.ones((T, T))) == 0, -1e30, sc)
+            sc = np.where(np.tril(np.ones((T, T))) == 0, -1e30, sc)  # no peeking ahead
             sc = sc - sc.max(-1, keepdims=True)
-            p = np.exp(sc); p /= p.sum(-1, keepdims=True)
+            p = np.exp(sc); p /= p.sum(-1, keepdims=True)            # into percentages
             att[:, sl] = p @ v[:, sl]
         x = x + lin(att, d["wo"], d["wo_b"])
         xn = ln(x, d["ln2_w"], d["ln2_b"])
-        hmid = np.maximum(lin(xn, d["w_fc"], d["fc_b"]), 0)
+        hmid = np.maximum(lin(xn, d["w_fc"], d["fc_b"]), 0)          # the thinking step
         x = x + lin(hmid, d["w_proj"], d["proj_b"])
     x = ln(x, ln_f_w, ln_f_b)
-    return lin(x[-1], lm, lm_b)                 # logits for the last position
+    return lin(x[-1], lm, lm_b)                 # scores for the next letter
 
 
 prompt = sys.argv[1] if len(sys.argv) > 1 else "First Citizen:"
@@ -89,9 +90,9 @@ print(f"prompt: {prompt!r}  (T={len(ids)})")
 print("logits[:5]:", " ".join(f"{v:.4f}" for v in logits[:5]))
 print(f"argmax id: {int(logits.argmax())}  char: {chars[int(logits.argmax())]!r}")
 
-if n_new:                                       # greedy generation (deterministic)
+if n_new:                                       # always-pick-the-top continuation
     for _ in range(n_new):
-        cond = ids[-block:]                      # never exceed context window
+        cond = ids[-block:]                      # only look back so far
         nxt = int(forward(cond).argmax())
         ids.append(nxt)
     print(f"\ngreedy continuation ({n_new} chars):")

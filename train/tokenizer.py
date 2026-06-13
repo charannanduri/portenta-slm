@@ -1,27 +1,28 @@
 """
-Character-level tokenizer, built from scratch.
+The tokenizer: turns text into numbers and back.
 
-A tokenizer answers two questions:
-  encode(text)  -> list of integer IDs   (so the model can do math on text)
-  decode(ids)   -> text                   (so we can read the model's output)
+The computer can only do math on numbers, not letters. So we give every
+character its own number. "a" might be 39, "b" might be 40, space might be 1.
+  encode("hi") -> [47, 48]     text in, numbers out
+  decode([47, 48]) -> "hi"     numbers in, text out
 
-For char-level, the "vocabulary" is just the sorted set of unique
-characters that appear in our training data. Each character maps to one
-integer ID (its index in that sorted list). That's the whole trick.
+The "vocabulary" is just the list of every different character that shows up in
+the training text, sorted. A character's number is simply where it sits in that
+list. That's the whole idea.
 """
 
 
 class CharTokenizer:
     def __init__(self, text: str):
-        # The vocabulary: every unique character, in a stable sorted order.
-        # Sorting matters so the same text always produces the same IDs.
+        # grab every different character in the text, put them in a fixed order.
+        # sorting matters so the same text always gives the same numbers.
         chars = sorted(set(text))
         self.vocab = chars
         self.vocab_size = len(chars)
 
-        # Two lookup tables: char->id (for encoding) and id->char (for decoding).
-        self.stoi = {ch: i for i, ch in enumerate(chars)}  # "string to int"
-        self.itos = {i: ch for i, ch in enumerate(chars)}  # "int to string"
+        # two little lookup tables: one for char -> number, one for number -> char
+        self.stoi = {ch: i for i, ch in enumerate(chars)}  # char to number
+        self.itos = {i: ch for i, ch in enumerate(chars)}  # number to char
 
     def encode(self, text: str) -> list[int]:
         return [self.stoi[ch] for ch in text]
@@ -31,7 +32,7 @@ class CharTokenizer:
 
 
 if __name__ == "__main__":
-    # Quick self-test so we can SEE what the tokenizer does.
+    # quick test so we can actually see what it does
     with open("data/tinyshakespeare.txt", "r") as f:
         text = f.read()
 
@@ -44,7 +45,7 @@ if __name__ == "__main__":
     print(f"\nencode({sample!r}) = {ids}")
     print(f"decode(...)       = {tok.decode(ids)!r}")
 
-    # The most important sanity check in all of tokenization:
-    # decoding what we encoded must give back the original text exactly.
+    # the big check: if we turn text into numbers and back, we should get the
+    # exact same text. if this ever fails, everything after it is broken.
     assert tok.decode(tok.encode(text)) == text, "round-trip failed!"
     print("\nround-trip over the full dataset: OK")

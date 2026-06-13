@@ -1,16 +1,16 @@
 """
-Training loop, from scratch in MLX.
+Teaching the model, in MLX.
 
-Training is a simple loop repeated thousands of times:
-  1. grab a batch of (input, correct-next-char) pairs from the data
-  2. run the model forward to get its predicted scores (logits)
-  3. measure how wrong it is -> a single number, the LOSS
-  4. compute the gradient: which direction to nudge every weight to lower loss
-  5. take a small step in that direction (the optimizer)
-That's it. The model gets a little less wrong each step.
+Training is just this same little loop, done thousands of times:
+  1. grab some text and the correct next letter for each spot
+  2. let the model guess
+  3. measure how wrong it was (one number, called the "loss")
+  4. figure out which way to nudge every weight to be less wrong
+  5. take a tiny step that way
+Do that enough and the model slowly gets good.
 
 Run:
-  PYTHONPATH=train .venv/bin/python train/train.py [max_iters]
+  PYTHONPATH=train .venv/bin/python train/train.py [how_many_steps]
 """
 
 import sys
@@ -23,16 +23,16 @@ import mlx.optimizers as optim
 from tokenizer import CharTokenizer
 from model import GPT, GPTConfig
 
-# ---- knobs -----------------------------------------------------------------
-batch_size = 64          # sequences processed per step
+# ---- settings you can tweak ------------------------------------------------
+batch_size = 64          # how many text snippets per step
 max_iters = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
-eval_interval = 250      # how often to check val loss + print a sample
-eval_iters = 50          # batches averaged when estimating loss
-learning_rate = 3e-4
+eval_interval = 250      # how often to check progress + print a sample
+eval_iters = 50          # how many batches we average when checking
+learning_rate = 3e-4     # how big a step we take each time
 out_path = "train/out/ckpt.safetensors"
 # ----------------------------------------------------------------------------
 
-# Data: load, tokenize, split 90/10 into train and validation.
+# load the text, turn it into numbers, keep 90% to learn from and 10% to test on
 with open("data/tinyshakespeare.txt") as f:
     text = f.read()
 tok = CharTokenizer(text)
@@ -46,9 +46,9 @@ mx.eval(model.parameters())
 
 
 def get_batch(split):
-    """Pick `batch_size` random windows. x = chars [i:i+block], y = the SAME
-    window shifted one char right (so y[t] is the correct next char for x[t]).
-    The model learns to predict y from x at every position at once."""
+    """grab some random chunks of text. x is the chunk, y is the same chunk
+    shifted over by one, so y is always 'the next letter' for x. the model
+    learns to predict y from x at every spot at once."""
     d = train_data if split == "train" else val_data
     ix = mx.random.randint(0, d.size - cfg.block_size, shape=(batch_size,)).tolist()
     x = mx.stack([d[i:i + cfg.block_size] for i in ix])
@@ -57,10 +57,10 @@ def get_batch(split):
 
 
 def loss_fn(model, x, y):
-    """Cross-entropy: the model outputs a probability for each possible next
-    char; loss is the negative log of the probability it assigned to the
-    CORRECT char, averaged over all positions. Confident & right -> near 0.
-    Confident & wrong -> large. A random model scores ~ln(vocab_size)."""
+    """how wrong the model is. it gives each possible next letter a chance;
+    the loss is bigger when it gave the correct letter a low chance. sure and
+    right -> near 0. sure and wrong -> big. a model that's just guessing
+    randomly scores about ln(65) = 4.17."""
     logits = model(x)                                # (B, T, vocab)
     B, T, V = logits.shape
     return nn.losses.cross_entropy(
@@ -68,15 +68,15 @@ def loss_fn(model, x, y):
     )
 
 
-# value_and_grad gives us both the loss AND the gradient of every weight
-# w.r.t. that loss, in one call. The optimizer then applies the update.
+# this gives us the loss AND which way to nudge each weight, in one go.
+# the optimizer is the thing that actually does the nudging.
 loss_and_grad = nn.value_and_grad(model, loss_fn)
 optimizer = optim.AdamW(learning_rate=learning_rate)
 
 
 def estimate_loss():
-    """Average loss over several batches of train and val (no weight updates).
-    Val loss is the honest measure — it's data the model didn't train on."""
+    """check the loss on both sets without changing anything. the val number
+    is the honest one, since it's text the model never trained on."""
     out = {}
     for split in ("train", "val"):
         losses = []
@@ -99,16 +99,16 @@ for it in range(max_iters + 1):
         ips = it / dt if dt > 0 else 0
         print(f"iter {it:5d} | train {losses['train']:.3f} | val {losses['val']:.3f} "
               f"| {ips:5.1f} it/s | GPU peak {gpu_mb:5.0f} MB")
-        # Show a sample so we can watch gibberish -> Shakespeare.
+        # print a little sample so we can watch it go from nonsense to Shakespeare
         sample = model.generate(mx.array(tok.encode("\n")).reshape(1, 1), 120)
         print("   sample: " + repr(tok.decode(sample[0].tolist()).replace("\n", "\\n")))
 
     x, y = get_batch("train")
     loss, grads = loss_and_grad(model, x, y)
     optimizer.update(model, grads)
-    mx.eval(model.parameters(), optimizer.state)  # force the lazy graph to run
+    mx.eval(model.parameters(), optimizer.state)  # MLX is lazy, so make it run now
 
-# Save the trained weights.
+# save what we learned
 import os
 os.makedirs("train/out", exist_ok=True)
 model.save_weights(out_path)

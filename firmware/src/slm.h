@@ -1,7 +1,7 @@
-// slm.h -- the language model, same structs + math as your desktop run.c.
-// Only the platform layer differs: weights are read from a memory buffer
-// (flash) instead of a file, and forward() uses fixed static buffers instead
-// of malloc. The math (matmul, layernorm, attention, sample) is unchanged.
+// slm.h -- the model for the Portenta. same structs and same math as the
+// desktop run.c. the only difference is the chip stuff: the weights are read
+// straight out of memory instead of a file, and we use fixed buffers instead
+// of malloc. the actual math is identical.
 #pragma once
 #include <stdint.h>
 
@@ -26,21 +26,21 @@ typedef struct {
 
 typedef struct {
     float *token_emb, *pos_emb;
-    Layer *layers;                 // caller provides storage (set before load)
+    Layer *layers;                 // you give it the storage before loading
     float *ln_f_w, *ln_f_b;
     int8_t *lm_head; float *lm_head_s; float *lm_head_b;
 } Weights;
 
-// Parse the embedded model.bin image: fill cfg, point the Weights pointers
-// directly into `data` (no copy), and copy the vocab chars into `vocab`.
+// read the model out of the baked-in data: fill in cfg, point all the weight
+// pointers into the data (no copying), and copy the characters into vocab.
 void slm_load(const unsigned char *data, Config *cfg, Weights *w, char *vocab);
 
-// Process ONE token at absolute position `pos`, using the persistent KV cache.
-// Writes vocab_size logits for predicting the next token. Positions must run
-// 0,1,2,... within one generated passage; start a new passage at pos 0.
+// run the model for ONE letter at spot `pos`, using the saved keys/values so we
+// don't redo old work. writes the scores for the next letter into `logits`.
+// feed letters in order: pos 0, 1, 2... start a new piece of text back at 0.
 void slm_forward_token(Config *cfg, Weights *w, int token, int pos, float *logits);
 
-// Sample a token id from logits with the given temperature.
+// pick a letter from the scores. higher temp = more random, lower = safer.
 int slm_sample(float *logits, int n, float temp);
 
 #ifdef __cplusplus

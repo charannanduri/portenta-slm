@@ -1,63 +1,41 @@
 """
-Stage 4: export the trained model to a single binary file `model.bin`
-that the C inference engine will read.
+Save the trained model to one file (model.bin) that the C code can read.
 
-Design rules (kept deliberately simple so the C side is easy to write):
-  * Everything is little-endian (true on both Apple Silicon and Cortex-M7).
-  * MATMUL weights (the big Linear layers) are int8 + a per-row float32 scale.
-  * Everything else (embeddings, biases, LayerNorm params) stays float32.
-      - Embeddings are looked up, not multiplied, so float keeps the C simple.
-      - Biases / norms are tiny and precision-sensitive.
+A few simple rules so the C side is easy:
+  * the big weight grids get shrunk to whole numbers (int8) + a scale per row.
+  * everything small (the letter tables, the bias and layernorm numbers) stays
+    as normal decimals. they're tiny and it keeps the C simpler.
 
-A Linear in MLX computes  y = x @ W.T + b, with W shaped (out, in). We store W
-row-major as (out, in), so row `o` holds all the weights that produce output o:
-      out[o] = scale[o] * sum_i ( qW[o,i] * x[i] ) + b[o]
-Note the scale pulls OUT of the inner loop — one multiply per output, not per
-element. (That's a nice efficiency win you'll feel on the Portenta.)
+A weight grid does: out[o] = scale[o] * (sum of weights[o] * inputs) + bias[o].
+We store the scale once per row, so the C only multiplies by it once per
+output instead of for every weight. nice little speedup on the chip.
 
-FILE LAYOUT  (read top to bottom):
+WHAT'S IN THE FILE (top to bottom):
 
-  HEADER  (7 x int32):
-      magic        = 0x4D4C5354   ("TSLM")
-      version      = 1
-      vocab_size
-      block_size
-      n_embd
-      n_head
-      n_layer
+  HEADER (7 whole numbers):
+      magic = "TSLM" (just a tag so we know it's our file), version,
+      vocab_size, block_size, n_embd, n_head, n_layer
 
-  TOKENIZER:
-      vocab_size bytes   -- the characters, in id order (id i -> byte[i])
-      + 0-3 pad bytes    -- so the weights below start 4-byte aligned
+  THE VOCABULARY:
+      one byte per character, in order
+      + a few zero bytes so the weights start at a tidy spot (see note below)
 
-  WEIGHTS  (in this exact order):
-      token_emb   f32[vocab_size * n_embd]
-      pos_emb     f32[block_size * n_embd]
+  THE WEIGHTS (in this exact order):
+      token table, position table
+      then for each block:
+        layernorm1 numbers
+        the query / key / value / output grids (each: bytes then its scales)
+        layernorm2 numbers
+        the two feed-forward grids (each: bytes then scales) + their biases
+      then the final layernorm and the output grid
 
-      for each of n_layer blocks:
-          ln1_w   f32[n_embd]
-          ln1_b   f32[n_embd]
-          wq      int8[n_embd*n_embd]  then  scale f32[n_embd]
-          wk      int8[n_embd*n_embd]  then  scale f32[n_embd]
-          wv      int8[n_embd*n_embd]  then  scale f32[n_embd]
-          wo      int8[n_embd*n_embd]  then  scale f32[n_embd]
-          wo_b    f32[n_embd]
-          ln2_w   f32[n_embd]
-          ln2_b   f32[n_embd]
-          w_fc    int8[hidden*n_embd]  then  scale f32[hidden]   (hidden = 4*n_embd)
-          fc_b    f32[hidden]
-          w_proj  int8[n_embd*hidden]  then  scale f32[n_embd]
-          proj_b  f32[n_embd]
+Why the zero bytes: the Portenta's math chip crashes if it reads a decimal
+number from an odd spot in memory. The few zero bytes push the weights to a
+clean spot so that never happens.
 
-      ln_f_w      f32[n_embd]
-      ln_f_b      f32[n_embd]
-      lm_head     int8[vocab_size*n_embd]  then  scale f32[vocab_size]
-      lm_head_b   f32[vocab_size]
-
-NOTE on attention: the trained model stores n_head separate query/key/value
-matrices (one per Head). Here we CONCATENATE them into one (n_embd, n_embd)
-matrix each (wq/wk/wv) -- mathematically identical, but one big matmul is much
-nicer in C. In C you slice the result into heads of size n_embd/n_head.
+One thing on attention: in training, each head has its own little
+query/key/value grid. Here we just stack them into one bigger grid each. Same
+math, but one big grid is way nicer to handle in C.
 
 Run:
   PYTHONPATH=train .venv/bin/python train/export.py
@@ -94,13 +72,13 @@ def main():
     head_size = cfg.n_embd // cfg.n_head
 
     f = open(OUT, "wb")
-    nq = 0  # count of quantized matrices, for the summary
+    nq = 0  # how many grids we shrunk, just for the printout
 
     def write_f32(arr):
         np.asarray(arr, dtype="<f4").tofile(f)
 
     def write_qmatrix(W):
-        """W: (out, in) float. Write int8 weights row-major, then per-row f32 scale."""
+        """shrink a weight grid to bytes + one scale per row, and write both"""
         nonlocal nq
         W = np32(W)
         scale = np.abs(W).max(axis=1, keepdims=True) / 127.0
@@ -113,25 +91,24 @@ def main():
     # ---- header ----
     f.write(struct.pack("<7i", MAGIC, VERSION, cfg.vocab_size, cfg.block_size,
                          cfg.n_embd, cfg.n_head, cfg.n_layer))
-    # ---- tokenizer ----
+    # ---- the vocabulary ----
     f.write(bytes(ord(c) for c in tok.vocab))
-    # Pad to a 4-byte boundary so every float in the weights below is aligned.
-    # (The Cortex-M7 FPU faults on unaligned float loads when we point directly
-    # into flash on the Portenta.) All int8 matrix sizes are multiples of 4, so
-    # this single pad keeps every later array aligned too.
+    # add a few zero bytes so the weights below land on a tidy 4-byte spot.
+    # the Portenta's math chip crashes reading a decimal from an odd spot, and
+    # all the byte-grids are sized so once this lines up, everything stays lined up.
     pad = (-f.tell()) % 4
     f.write(b"\x00" * pad)
 
-    # ---- embeddings (float32) ----
+    # ---- the letter + position tables (kept as decimals) ----
     write_f32(model.token_emb.weight)
     write_f32(model.pos_emb.weight)
 
-    # ---- per-layer weights ----
+    # ---- the weights for each block ----
     for blk in model.blocks:
         write_f32(blk.ln1.weight)
         write_f32(blk.ln1.bias)
 
-        # Concatenate the per-head q/k/v matrices into one (n_embd, n_embd) each.
+        # stack each head's query/key/value grids into one bigger grid
         wq = np.concatenate([np32(h.query.weight) for h in blk.attn.heads], axis=0)
         wk = np.concatenate([np32(h.key.weight) for h in blk.attn.heads], axis=0)
         wv = np.concatenate([np32(h.value.weight) for h in blk.attn.heads], axis=0)
@@ -145,15 +122,15 @@ def main():
         write_f32(blk.ln2.weight)
         write_f32(blk.ln2.bias)
 
-        write_qmatrix(blk.ffwd.net.layers[0].weight)   # (hidden, n_embd)
+        write_qmatrix(blk.ffwd.net.layers[0].weight)   # grow step
         write_f32(blk.ffwd.net.layers[0].bias)
-        write_qmatrix(blk.ffwd.net.layers[2].weight)   # (n_embd, hidden)
+        write_qmatrix(blk.ffwd.net.layers[2].weight)   # shrink step
         write_f32(blk.ffwd.net.layers[2].bias)
 
-    # ---- final norm + output head ----
+    # ---- the final layernorm + the output grid ----
     write_f32(model.ln_f.weight)
     write_f32(model.ln_f.bias)
-    write_qmatrix(model.lm_head.weight)                # (vocab_size, n_embd)
+    write_qmatrix(model.lm_head.weight)
     write_f32(model.lm_head.bias)
 
     size = f.tell()
