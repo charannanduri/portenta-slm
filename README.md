@@ -31,8 +31,6 @@ in six steps. Each one links to the code that does it:
 5. **Rewrite it in C** and double-check it gives the same answers → [`c_inference/run.c`](c_inference/run.c) + [`train/ref.py`](train/ref.py)
 6. **Put it on the chip** and make it fast enough to chat with → [`firmware/`](firmware/)
 
-Here's the same thing as a picture:
-
 ```mermaid
 flowchart LR
     A[Shakespeare<br/>text] --> B[train the model<br/>on a laptop]
