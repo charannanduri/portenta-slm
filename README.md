@@ -4,7 +4,7 @@
 chip you can hold in your hand — and you can chat with it over USB serial.**
 
 I wanted to see what a small microcontroller could do while also learning how Language models actually train, and infer on text.
-This is a really simple way to learn what models are actually doign under the hood. 
+This is a really simple way to learn what models are actually doing under the hood. 
 
 Once it's loaded, the chip does all the thinking by itself. You type something and it writes back. Just like any Chatbot:
 
@@ -17,10 +17,10 @@ And then the gods...
 
 The whole point of this project was to build every piece myself and actually
 understand it.
-Not just call somebody's "make an AI" button. So everything
+Not just call somebody's "make an AI" program. So everything
 here is small enough to read and figure out.
 I did use claude 4.6 to help me figure some parts of it out though.
-Even then it is very simple and easy to understand with the comments in all the code. 
+Even then it is very simple and easy to understand with the comments in the code. 
 
 You might be wondering why I chose a Portenta H7... well aside from the fact that it is marketed towards light AI work loads, we also use a lot of STM32 devices at work, so it always helps to be more familiar with how they do things. Also I just had one laying around and I didn't want to build yet another Raspberry Pi thing.
 
