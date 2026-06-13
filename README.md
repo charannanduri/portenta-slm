@@ -1,10 +1,12 @@
 # portenta-slm
 
-**I trained a tiny AI to write like Shakespeare, then got it running on a little
+**I trained a Small Language Model to write like Shakespeare, then got it running on a little
 chip you can hold in your hand — and you can chat with it over a USB cable.**
 
-No cloud, no internet, no giant computer. Once it's loaded, the chip does all
-the thinking by itself. You type something, it writes back:
+I wanted to see what a small microcontroller could do while also learning how Language models actually train, and infer on text.
+This is a really simple way to learn what models are actually doign under the hood. 
+
+Once it's loaded, the chip does all the thinking by itself. You type something and it writes back. Just like any Chatbot:
 
 ```
 prompt> ROMEO:
@@ -14,15 +16,17 @@ And then the gods...
 ```
 
 The whole point of this project was to build every piece myself and actually
-understand it — not just call somebody's "make an AI" button. So everything
+understand it.
+Not just call somebody's "make an AI" button. So everything
 here is small enough to read and figure out.
+I did use claude 4.6 to help me figure some parts of it out though.
+Even then it is very simple and easy to understand with the comments in all the code. 
+
+You might be wondering why I chose a Portenta H7... well aside from the fact that it is marketed towards light AI work loads, we also use a lot of STM32 devices at work, so it always helps to be more familiar with how they do things. Also I just had one laying around and I didn't want to build yet another Raspberry Pi thing.
 
 ---
 
-## The short version
-
-We took it from "a folder of Shakespeare text" to "a chip that writes Shakespeare"
-in six steps. Each one links to the code that does it:
+## TDLR, here is what we did:
 
 1. **Turn letters into numbers** so a computer can work with them → [`train/tokenizer.py`](train/tokenizer.py)
 2. **Build the AI** (a small "guess the next letter" model) → [`train/model.py`](train/model.py)
@@ -40,7 +44,7 @@ flowchart LR
     E --> F[chat with it<br/>over USB]
 ```
 
-The big idea: a trained AI is really just **a pile of numbers** plus **a recipe
+The big idea: a Language Model is really just **a pile of numbers** plus **a recipe
 for multiplying them**. You can train on a fast computer, save the numbers, and
 then re-do the multiplying anywhere — even on a chip with no internet and barely
 any memory.
