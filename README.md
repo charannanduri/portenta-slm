@@ -37,7 +37,7 @@ You might be wondering why I chose a Portenta H7... well aside from the fact tha
 
 ```mermaid
 flowchart LR
-    A[Shakespeare<br/>text] --> B[train the model<br/>on a laptop]
+    A[Shakespeare<br/>text] --> B[train the model<br/>on a computer]
     B --> C[shrink the weights<br/>to a small file]
     C --> D[rewrite it in C<br/>+ double-check]
     D --> E[load onto the<br/>Portenta chip]
@@ -112,7 +112,7 @@ and multiplication, no fancy libraries. → [`c_inference/run.c`](c_inference/ru
 How do we know the C version is correct? We keep an **answer key**: a second copy
 of the model in simple Python that reads the exact same file. If the C code and
 the answer key spit out the same numbers, the C is right. This let us catch every
-bug on the laptop *before* touching the chip (way easier to fix there).
+bug on the computer *before* touching the chip (way easier to fix there).
 → [`train/ref.py`](train/ref.py)
 
 ```
@@ -213,9 +213,9 @@ Type a prompt, press Enter, and it writes back.
 
 ---
 
-## Honest notes
+## Notes
 
-This is a *tiny* model (about half a million numbers) running on a chip, not
+This is a *tiny* model (about half a million parameters) running on a tiny chip, not
 ChatGPT. It only remembers about 96 characters at a time, so replies are a
 sentence or two, and they sound Shakespeare-ish without really making sense. But
 every single number in it came from this repo — and it all runs on a chip with no
