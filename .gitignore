@@ -1,0 +1,24 @@
+# Python environments (recreate per the README)
+.venv/
+.piovenv/
+__pycache__/
+*.pyc
+
+# PlatformIO build output
+firmware/.pio/
+
+# Generated from model.bin — regenerate with: python train/embed_model.py
+firmware/src/model_data.h
+
+# Compiled desktop binaries
+c_inference/run
+firmware/test_slm
+firmware/run
+*.o
+
+# Training logs
+train/out/*.log
+
+# macOS + local tooling
+.DS_Store
+.claude/
